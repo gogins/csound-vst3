@@ -181,8 +181,6 @@ elseif(UNIX)
     target_link_libraries(CsoundVST3 PRIVATE ${CSOUND_LIBRARY})
 endif()
 
-
-
 if(APPLE)
     # Install VST3 plugin (CMake treats it as a MODULE, so we must use LIBRARY DESTINATION)
     install(TARGETS CsoundVST3_VST3

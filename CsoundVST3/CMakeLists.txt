@@ -86,6 +86,8 @@ target_sources(CsoundVST3 PRIVATE
 
 target_include_directories(CsoundVST3 PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/Source
+    /usr/include/harfbuzz/
+    /usr/include/glib-2.0/glib
 )
 
 # JUCE module dependencies
@@ -103,6 +105,7 @@ target_link_libraries(CsoundVST3 PRIVATE
     juce::juce_graphics
     juce::juce_gui_basics
     juce::juce_gui_extra
+    curl
 )
 
 # Compile definitions

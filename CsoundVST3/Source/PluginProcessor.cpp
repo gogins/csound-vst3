@@ -232,7 +232,7 @@ void CsoundVST3AudioProcessor::synchronizeScore(juce::Optional<juce::AudioPlayHe
         return;
     }
     juce::Optional<int64_t> optional_host_frame_index = play_head_position->getTimeInSamples();
-    if (optional_host_frame_index == false)
+    if (optional_host_frame_index.hasValue() == false)
     {
         return;
     }
@@ -245,7 +245,7 @@ void CsoundVST3AudioProcessor::synchronizeScore(juce::Optional<juce::AudioPlayHe
     if (host_frame < host_prior_frame)
     {
         juce::Optional<double> optional_host_frame_seconds = play_head_position->getTimeInSeconds();
-        if (optional_host_frame_seconds == true)
+        if (optional_host_frame_seconds.hasValue() == true)
         {
             DBG("Looping...");
             auto host_frame_seconds = *optional_host_frame_seconds;

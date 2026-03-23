@@ -214,6 +214,29 @@ int CsoundVST3AudioProcessor::midiWrite(CSOUND *csound_, void *userData, const u
     return result;
 }
 
+template<typename T> void drain(moodycamel::ReaderWriterQueue<T> &queue);
+
+void CsoundVST3AudioProcessor::requestGlobalRestart()
+{
+    restart_requested = true;
+    orchestra_ready = false;
+    drain(midi_input_fifo);
+    drain(audio_input_fifo);
+    drain(midi_output_fifo);
+    drain(audio_output_fifo);
+}
+
+void CsoundVST3AudioProcessor::performGlobalRestart(double sample_rate, int samples_per_block, double score_time_seconds)
+{
+    suspendProcessing(false);
+    prepareToPlay(sample_rate, samples_per_block);
+    csound.SetScoreOffsetSeconds(score_time_seconds);
+    host_prior_frame = host_frame;
+    pending_score_time_seconds = score_time_seconds;
+    restart_requested = false;
+    orchestra_ready = (csoundIsPlaying == true);
+}
+
 /**
  * Ensures that Csound's score time tracks the host's performance time. This
  * causes Csound to loop in its own score along with the host.
@@ -225,34 +248,42 @@ int CsoundVST3AudioProcessor::midiWrite(CSOUND *csound_, void *userData, const u
  */
 void CsoundVST3AudioProcessor::synchronizeScore(juce::Optional<juce::AudioPlayHead::PositionInfo> &play_head_position)
 {
-    /// juce::MessageManagerLock lock;
-    /// DBG("Synchronizing score...\n");
-    if (play_head_position->getIsPlaying() == false)
+    if (play_head_position.hasValue() == false)
     {
+        host_was_playing = false;
         return;
     }
+    const bool host_is_playing = play_head_position->getIsPlaying();
     juce::Optional<int64_t> optional_host_frame_index = play_head_position->getTimeInSamples();
     if (optional_host_frame_index.hasValue() == false)
     {
-        return;
-    }
-    if (csoundIsPlaying == false)
-    {
+        host_was_playing = host_is_playing;
         return;
     }
     host_frame = *optional_host_frame_index;
-    // Here we see if the host is looping.
-    if (host_frame < host_prior_frame)
+    if (host_is_playing == false)
     {
-        juce::Optional<double> optional_host_frame_seconds = play_head_position->getTimeInSeconds();
-        if (optional_host_frame_seconds.hasValue() == true)
+        if (host_was_playing == true)
         {
-            DBG("Looping...");
-            auto host_frame_seconds = *optional_host_frame_seconds;
-            csound.SetScoreOffsetSeconds(host_frame_seconds);
+            requestGlobalRestart();
         }
+        host_prior_frame = host_frame;
+        host_was_playing = false;
+        return;
+    }
+    juce::Optional<double> optional_host_frame_seconds = play_head_position->getTimeInSeconds();
+    if (optional_host_frame_seconds.hasValue() == false)
+    {
+        host_was_playing = true;
+        return;
+    }
+    if ((host_was_playing == false) || (host_frame < host_prior_frame))
+    {
+        pending_score_time_seconds = *optional_host_frame_seconds;
+        requestGlobalRestart();
     }
     host_prior_frame = host_frame;
+    host_was_playing = true;
 }
 
 template<typename T> void drain(moodycamel::ReaderWriterQueue<T> &queue)
@@ -392,12 +423,14 @@ void CsoundVST3AudioProcessor::prepareToPlay (double sampleRate, int samplesPerB
     if (plugin_host_type.type == juce::PluginHostType::UnknownHost)
     {
         csoundIsPlaying = false;
+        orchestra_ready = false;
         suspendProcessing(true);
         csoundMessage("CsoundVST3AudioProcessor::prepareToPlay: Ready to play.\n");
     }
     else
     {
         csoundIsPlaying = true;
+        orchestra_ready = true;
         suspendProcessing(false);
         csoundMessage("CsoundVST3AudioProcessor::prepareToPlay: Csound is plqying.\n");
     }
@@ -432,19 +465,47 @@ void CsoundVST3AudioProcessor::prepareToPlay (double sampleRate, int samplesPerB
 void CsoundVST3AudioProcessor::processBlock (juce::AudioBuffer<float>& host_audio_buffer, juce::MidiBuffer& host_midi_buffer)
 {
     auto play_head = getPlayHead();
-    auto play_head_position = play_head->getPosition();
-    if (csoundIsPlaying == false)
+    if (play_head == nullptr)
     {
         host_audio_buffer.clear();
         host_midi_buffer.clear();
         return;
     }
-    auto optional_time_in_samples = play_head_position->getTimeInSamples();
-    if (optional_time_in_samples)
-    {
-        host_block_frame = *optional_time_in_samples;
-    }
+    auto play_head_position = play_head->getPosition();
     synchronizeScore(play_head_position);
+
+    bool host_is_playing = false;
+    if (play_head_position.hasValue())
+    {
+        host_is_playing = play_head_position->getIsPlaying();
+        auto optional_time_in_samples = play_head_position->getTimeInSamples();
+        if (optional_time_in_samples.hasValue())
+        {
+            host_block_frame = *optional_time_in_samples;
+        }
+    }
+
+    if (host_is_playing == false)
+    {
+        host_audio_buffer.clear();
+        host_midi_buffer.clear();
+        return;
+    }
+
+    if (restart_requested == true)
+    {
+        performGlobalRestart(getSampleRate(), getBlockSize(), pending_score_time_seconds);
+        host_audio_buffer.clear();
+        host_midi_buffer.clear();
+        return;
+    }
+
+    if ((csoundIsPlaying == false) || (orchestra_ready == false))
+    {
+        host_audio_buffer.clear();
+        host_midi_buffer.clear();
+        return;
+    }
     juce::ScopedNoDenormals noDenormals;
     auto host_audio_buffer_frames = host_audio_buffer.getNumSamples();
     host_block_begin = host_frame;
@@ -532,13 +593,17 @@ void CsoundVST3AudioProcessor::processBlock (juce::AudioBuffer<float>& host_audi
             spin[(csound_frame * csound_input_channels) + channel_index] = double(sample);
         }
         // ...until spin is full...
-        if (csound_frame == 0)
+        if (csound_frame == (csound_frames - 1))
         {
-            csound_block_begin = plugin_frame;
-            csound_block_end = plugin_frame + csound_frames;
+            csound_block_begin = plugin_frame - (csound_frames - 1);
+            csound_block_end = csound_block_begin + csound_frames;
             auto result = csound.PerformKsmps();
             if (result != 0) {
-                csoundIsPlaying = false;
+                pending_score_time_seconds = host_block_begin / getSampleRate();
+                requestGlobalRestart();
+                host_audio_buffer.clear();
+                host_midi_buffer.clear();
+                return;
             }
             for (int csound_block_frame = 0; csound_block_frame < csound_frames; ++csound_block_frame)
             {
@@ -650,6 +715,8 @@ void CsoundVST3AudioProcessor::stop()
 {
     suspendProcessing(true);
     csoundIsPlaying = false;
+    orchestra_ready = false;
+    restart_requested = false;
     csound.Stop();
     csound.Cleanup();
     csound.Reset();

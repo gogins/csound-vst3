@@ -83,6 +83,8 @@ public:
     static int midiRead(CSOUND *csound, void *userData, unsigned char *buf, int nbytes);
     static int midiWrite(CSOUND *csound, void *userData, const unsigned char *buf, int nBytes);
     void synchronizeScore(juce::Optional<juce::AudioPlayHead::PositionInfo> &play_head_position);
+    void requestGlobalRestart();
+    void performGlobalRestart(double sample_rate, int samples_per_block, double score_time_seconds);
     
     void play();
     void stop();
@@ -129,6 +131,11 @@ private:
     int64_t host_block_begin;
     int64_t host_block_end;
     int64_t midi_input_sequence;
+
+    bool host_was_playing = false;
+    bool restart_requested = false;
+    bool orchestra_ready = false;
+    double pending_score_time_seconds = 0.;
 
     // These intermediate FIFOs simplify synchronizing overlapping or 
     // incomplete blocks of sample frames.

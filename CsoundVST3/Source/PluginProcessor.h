@@ -84,8 +84,10 @@ public:
     static int midiWrite(CSOUND *csound, void *userData, const unsigned char *buf, int nBytes);
     void synchronizeScore(juce::Optional<juce::AudioPlayHead::PositionInfo> &play_head_position);
     void requestGlobalRestart();
-    void performGlobalRestart(double sample_rate, int samples_per_block, double score_time_seconds);
-    
+    void performGlobalRestart(double sample_rate,
+                            int samples_per_block,
+                            double score_time_seconds,
+                            int64_t score_time_samples);    
     void play();
     void stop();
 
@@ -136,6 +138,7 @@ private:
     bool restart_requested = false;
     bool orchestra_ready = false;
     double pending_score_time_seconds = 0.;
+    int64_t pending_score_time_samples = 0;
 
     // These intermediate FIFOs simplify synchronizing overlapping or 
     // incomplete blocks of sample frames.

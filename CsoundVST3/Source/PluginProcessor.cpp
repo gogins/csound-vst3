@@ -226,13 +226,40 @@ void CsoundVST3AudioProcessor::requestGlobalRestart()
     drain(audio_output_fifo);
 }
 
-void CsoundVST3AudioProcessor::performGlobalRestart(double sample_rate, int samples_per_block, double score_time_seconds)
+void CsoundVST3AudioProcessor::performGlobalRestart(double sample_rate,
+                                                    int samples_per_block,
+                                                    double score_time_seconds,
+                                                    int64_t score_time_samples)
 {
     suspendProcessing(false);
     prepareToPlay(sample_rate, samples_per_block);
+
     csound.SetScoreOffsetSeconds(score_time_seconds);
-    host_prior_frame = host_frame;
+
+    host_frame = score_time_samples;
+    host_prior_frame = score_time_samples;
+    host_block_frame = score_time_samples;
+    host_block_begin = score_time_samples;
+    host_block_end = score_time_samples;
+
+    plugin_frame = score_time_samples;
+
+    if (csound_frames > 0)
+    {
+        csound_frame = plugin_frame % csound_frames;
+    }
+    else
+    {
+        csound_frame = 0;
+    }
+
+    csound_block_begin = plugin_frame - csound_frame;
+    csound_block_end = csound_block_begin + csound_frames;
+    csound_frame_end = csound_block_end;
+
     pending_score_time_seconds = score_time_seconds;
+    pending_score_time_samples = score_time_samples;
+
     restart_requested = false;
     orchestra_ready = (csoundIsPlaying == true);
 }
@@ -253,39 +280,50 @@ void CsoundVST3AudioProcessor::synchronizeScore(juce::Optional<juce::AudioPlayHe
         host_was_playing = false;
         return;
     }
+
     const bool host_is_playing = play_head_position->getIsPlaying();
+
     juce::Optional<int64_t> optional_host_frame_index = play_head_position->getTimeInSamples();
     if (optional_host_frame_index.hasValue() == false)
     {
         host_was_playing = host_is_playing;
         return;
     }
+
+    juce::Optional<double> optional_host_frame_seconds = play_head_position->getTimeInSeconds();
+    if (optional_host_frame_seconds.hasValue() == false)
+    {
+        host_was_playing = host_is_playing;
+        return;
+    }
+
     host_frame = *optional_host_frame_index;
+
     if (host_is_playing == false)
     {
         if (host_was_playing == true)
         {
+            pending_score_time_seconds = *optional_host_frame_seconds;
+            pending_score_time_samples = host_frame;
             requestGlobalRestart();
         }
+
         host_prior_frame = host_frame;
         host_was_playing = false;
         return;
     }
-    juce::Optional<double> optional_host_frame_seconds = play_head_position->getTimeInSeconds();
-    if (optional_host_frame_seconds.hasValue() == false)
-    {
-        host_was_playing = true;
-        return;
-    }
+
     if ((host_was_playing == false) || (host_frame < host_prior_frame))
     {
         pending_score_time_seconds = *optional_host_frame_seconds;
+        pending_score_time_samples = host_frame;
         requestGlobalRestart();
     }
+
     host_prior_frame = host_frame;
     host_was_playing = true;
 }
-
+ 
 template<typename T> void drain(moodycamel::ReaderWriterQueue<T> &queue)
 {
     T element;
@@ -494,7 +532,10 @@ void CsoundVST3AudioProcessor::processBlock (juce::AudioBuffer<float>& host_audi
 
     if (restart_requested == true)
     {
-        performGlobalRestart(getSampleRate(), getBlockSize(), pending_score_time_seconds);
+        performGlobalRestart(getSampleRate(),
+                            getBlockSize(),
+                            pending_score_time_seconds,
+                            pending_score_time_samples);
         host_audio_buffer.clear();
         host_midi_buffer.clear();
         return;
@@ -598,8 +639,10 @@ void CsoundVST3AudioProcessor::processBlock (juce::AudioBuffer<float>& host_audi
             csound_block_begin = plugin_frame - (csound_frames - 1);
             csound_block_end = csound_block_begin + csound_frames;
             auto result = csound.PerformKsmps();
-            if (result != 0) {
+            if (result != 0)
+            {
                 pending_score_time_seconds = host_block_begin / getSampleRate();
+                pending_score_time_samples = host_block_begin;
                 requestGlobalRestart();
                 host_audio_buffer.clear();
                 host_midi_buffer.clear();

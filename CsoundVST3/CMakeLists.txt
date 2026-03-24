@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.15)
 
 project(CsoundVST3 VERSION 1.1.0)
-set(CSOUND_SIGN_IDENTITY "Apple Development: Michael Gogins (JC94KD4B5T)" CACHE STRING "Code signing identity for macOS")
-
+# set(CSOUND_SIGN_IDENTITY "Apple Development: Michael Gogins (JC94KD4B5T)" CACHE STRING "Code signing identity for macOS")
+set(CSOUND_SIGN_IDENTITY "Developer ID Application: Michael Gogins (9UX792D3V9)")
 # Require C++20
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -13,10 +13,10 @@ set(JUCE_ROOT "${CMAKE_SOURCE_DIR}/include/JUCE")
 add_subdirectory(${JUCE_ROOT})
 
 # Fnd Csound for non-macOS platforms.
-
-if (NOT APPLE)
+if(NOT APPLE)
     # Allow the user to specify a custom root path for Csound
     set(CSOUND_ROOT "" CACHE PATH "Root directory of the Csound installation")
+
     # Platform-specific hints
     if(WIN32)
         set(CSOUND_POSSIBLE_PATHS
@@ -32,18 +32,21 @@ if (NOT APPLE)
             "/opt"
         )
     endif()
+
     find_path(CSOUND_INCLUDE_DIR
         NAMES csound.hpp
         PATH_SUFFIXES include/csound
         PATHS ${CSOUND_POSSIBLE_PATHS}
         NO_DEFAULT_PATH
     )
+
     find_library(CSOUND_LIBRARY
         NAMES csound64 CsoundLib64 csound
         PATH_SUFFIXES lib
         PATHS ${CSOUND_POSSIBLE_PATHS}
         NO_DEFAULT_PATH
     )
+
     # Error out if not found.
     if(NOT CSOUND_INCLUDE_DIR OR NOT CSOUND_LIBRARY)
         message(FATAL_ERROR "Csound library or headers not found. Set CSOUND_ROOT or install Csound.")
@@ -91,24 +94,8 @@ target_include_directories(CsoundVST3 PRIVATE
     /usr/include/glib-2.0/glib
 )
 
-set(CSOUNDVST3_BUNDLE_TARGETS
-    CsoundVST3_Standalone
-    CsoundVST3_VST3
-    CsoundVST3_AU
-)
-
-foreach(target IN LISTS CSOUNDVST3_BUNDLE_TARGETS)
-    if(TARGET ${target})
-        target_sources(${target} PRIVATE ${ICNS_FILE})
-        set_target_properties(${target} PROPERTIES
-            MACOSX_BUNDLE TRUE
-            MACOSX_BUNDLE_ICON_FILE angel_concert.icns
-        )
-    endif()
-endforeach()
-
 # JUCE module dependencies
-target_link_libraries(CsoundVST3 PRIVATE 
+target_link_libraries(CsoundVST3 PRIVATE
     CsoundBinaryData
     juce::juce_audio_basics
     juce::juce_audio_devices
@@ -131,13 +118,6 @@ target_compile_definitions(CsoundVST3 PRIVATE
     JUCE_VST3_CAN_REPLACE_VST2=0
 )
 
-# Add icon and other resource files
-set(resources
-    Resources/angel_concert.png
-    Resources/angel_concert.icns
-    Resources/README.md
-)
-
 # macOS specific bundle properties
 if(APPLE)
     # List of plugin format targets to individually set.
@@ -152,17 +132,21 @@ if(APPLE)
 
     set(BUNDLE_IDENTIFIER "${BASE_BUNDLE_ID}.vst3")
     configure_file(${CMAKE_SOURCE_DIR}/Resources/Info.plist.in ${CMAKE_BINARY_DIR}/VST3_Info.plist @ONLY)
+
     set(BUNDLE_IDENTIFIER "${BASE_BUNDLE_ID}.au")
     configure_file(${CMAKE_SOURCE_DIR}/Resources/Info.plist.in ${CMAKE_BINARY_DIR}/AU_Info.plist @ONLY)
+
     set(BUNDLE_IDENTIFIER "${BASE_BUNDLE_ID}.standalone")
     configure_file(${CMAKE_SOURCE_DIR}/Resources/Info.plist.in ${CMAKE_BINARY_DIR}/Standalone_Info.plist @ONLY)
 
     set_target_properties(CsoundVST3_VST3 PROPERTIES
         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_BINARY_DIR}/VST3_Info.plist
     )
+
     set_target_properties(CsoundVST3_AU PROPERTIES
         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_BINARY_DIR}/AU_Info.plist
     )
+
     set_target_properties(CsoundVST3_Standalone PROPERTIES
         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_BINARY_DIR}/Standalone_Info.plist
     )
@@ -178,20 +162,20 @@ if(APPLE)
     set(ICNS_FILE Resources/angel_concert.icns)
     set_source_files_properties(${ICNS_FILE} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
 
-    foreach(target IN LISTS CSOUNDVST3_TARGETS)
-        if(TARGET ${target})
-            target_sources(${target} PRIVATE ${ICNS_FILE})
-            set_target_properties(${target} PROPERTIES
-                MACOSX_BUNDLE TRUE
-                MACOSX_BUNDLE_ICON_FILE angel_concert.icns
-            )
-        endif()
-    endforeach()
+    if(TARGET CsoundVST3_Standalone)
+        target_sources(CsoundVST3_Standalone PRIVATE ${ICNS_FILE})
+        set_target_properties(CsoundVST3_Standalone PROPERTIES
+            MACOSX_BUNDLE TRUE
+            MACOSX_BUNDLE_ICON_FILE angel_concert.icns
+        )
+    endif()
 elseif(WIN32)
     set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
+
     if(CSOUND_INCLUDE_DIR)
         target_include_directories(CsoundVST3 PRIVATE ${CSOUND_INCLUDE_DIR})
     endif()
+
     if(CSOUND_LIBRARY)
         target_link_libraries(CsoundVST3 PRIVATE ${CSOUND_LIBRARY})
     endif()
@@ -241,4 +225,3 @@ elseif(WIN32 OR UNIX)
         ARCHIVE DESTINATION lib
     )
 endif()
-

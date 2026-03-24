@@ -1,8 +1,10 @@
 cmake_minimum_required(VERSION 3.15)
 
 project(CsoundVST3 VERSION 1.1.0)
-# set(CSOUND_SIGN_IDENTITY "Apple Development: Michael Gogins (JC94KD4B5T)" CACHE STRING "Code signing identity for macOS")
-set(CSOUND_SIGN_IDENTITY "Developer ID Application: Michael Gogins (9UX792D3V9)")
+set(CSOUND_SIGN_IDENTITY "Developer ID Application: Michael Gogins (9UX792D3V9)" CACHE STRING "Code signing identity for macOS")
+set(NOTARYTOOL_KEYCHAIN_PROFILE "csound-vst3-notary-profile" CACHE STRING "Keychain profile name for xcrun notarytool")
+set(MACOS_DIST_DIR "${CMAKE_BINARY_DIR}/dist" CACHE PATH "Directory for staged and packaged macOS distribution artifacts")
+
 # Require C++20
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -12,12 +14,12 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(JUCE_ROOT "${CMAKE_SOURCE_DIR}/include/JUCE")
 add_subdirectory(${JUCE_ROOT})
 
-# Fnd Csound for non-macOS platforms.
+# Find Csound for non-macOS platforms.
 if(NOT APPLE)
-    # Allow the user to specify a custom root path for Csound
+    # Allow the user to specify a custom root path for Csound.
     set(CSOUND_ROOT "" CACHE PATH "Root directory of the Csound installation")
 
-    # Platform-specific hints
+    # Platform-specific hints.
     if(WIN32)
         set(CSOUND_POSSIBLE_PATHS
             "${CSOUND_ROOT}"
@@ -53,7 +55,7 @@ if(NOT APPLE)
     endif()
 endif()
 
-# Define plugin
+# Define plugin.
 juce_add_plugin(CsoundVST3
     COMPANY_NAME "Irreducible Productions"
     COMPANY_WEBSITE "https://michaelgogins.tumblr.com"
@@ -81,7 +83,7 @@ juce_add_binary_data(CsoundBinaryData
         ../README.md
 )
 
-# Add source files
+# Add source files.
 target_sources(CsoundVST3 PRIVATE
     Source/PluginProcessor.cpp
     Source/PluginEditor.cpp
@@ -94,7 +96,7 @@ target_include_directories(CsoundVST3 PRIVATE
     /usr/include/glib-2.0/glib
 )
 
-# JUCE module dependencies
+# JUCE module dependencies.
 target_link_libraries(CsoundVST3 PRIVATE
     CsoundBinaryData
     juce::juce_audio_basics
@@ -112,13 +114,13 @@ target_link_libraries(CsoundVST3 PRIVATE
     curl
 )
 
-# Compile definitions
+# Compile definitions.
 target_compile_definitions(CsoundVST3 PRIVATE
     JUCE_STRICT_REFCOUNTEDPOINTER=1
     JUCE_VST3_CAN_REPLACE_VST2=0
 )
 
-# macOS specific bundle properties
+# macOS specific bundle properties.
 if(APPLE)
     # List of plugin format targets to individually set.
     set(CSOUNDVST3_TARGETS
@@ -186,38 +188,21 @@ elseif(UNIX)
 endif()
 
 if(APPLE)
-    # Install VST3 plugin (CMake treats it as a MODULE, so we must use LIBRARY DESTINATION)
+    # Install VST3 plugin (CMake treats it as a MODULE, so we must use LIBRARY DESTINATION).
     install(TARGETS CsoundVST3_VST3
         LIBRARY DESTINATION Library/Audio/Plug-Ins/VST3
     )
 
-    # Install AU plugin (also a MODULE, needs LIBRARY DESTINATION)
+    # Install AU plugin (also a MODULE, needs LIBRARY DESTINATION).
     install(TARGETS CsoundVST3_AU
         LIBRARY DESTINATION Library/Audio/Plug-Ins/Components
     )
 
-    # Install standalone .app
+    # Install standalone .app.
     install(TARGETS CsoundVST3_Standalone
         BUNDLE DESTINATION Applications
     )
 
-    # Sign all bundles after installation
-    install(CODE "
-        message(STATUS \"Signing VST3 bundle...\")
-        execute_process(COMMAND codesign --deep --force --options runtime
-            --sign \"${CSOUND_SIGN_IDENTITY}\"
-            \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/Library/Audio/Plug-Ins/VST3/CsoundVST3.vst3\")
-
-        message(STATUS \"Signing AU component...\")
-        execute_process(COMMAND codesign --deep --force --options runtime
-            --sign \"${CSOUND_SIGN_IDENTITY}\"
-            \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/Library/Audio/Plug-Ins/Components/CsoundVST3.component\")
-
-        message(STATUS \"Signing Standalone app...\")
-        execute_process(COMMAND codesign --deep --force --options runtime
-            --sign \"${CSOUND_SIGN_IDENTITY}\"
-            \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/Applications/CsoundVST3.app\")
-    ")
 elseif(WIN32 OR UNIX)
     install(TARGETS CsoundVST3
         RUNTIME DESTINATION bin

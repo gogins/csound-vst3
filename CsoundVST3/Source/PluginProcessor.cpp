@@ -98,7 +98,7 @@ void CsoundVST3AudioProcessor::csoundMessage(const juce::String message)
     DBG(message);
 }
 
-void CsoundVST3AudioProcessor::csoundMessageCallback_(CSOUND *csound, int level, const char *format, va_list valist)
+void CsoundVST3AudioProcessor::csoundMessageCallback_(CSOUND *csound, int32_t level, const char *format, va_list valist)
 {
     auto host_data = csoundGetHostData(csound);
     auto processor = static_cast<CsoundVST3AudioProcessor *>(host_data);
